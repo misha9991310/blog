@@ -1,9 +1,10 @@
+from django.contrib.postgres.search import SearchVector, SearchQuery, SearchRank, TrigramSimilarity
 from django.core.mail import send_mail
 from django.core.paginator import Paginator, PageNotAnInteger, EmptyPage
 from django.db.models import Count
 from django.shortcuts import render, get_object_or_404
 from django.views.generic import ListView
-from .forms import EmilPostForm, CommentForm
+from .forms import EmilPostForm, CommentForm, SearchForm
 from .models import Post, Comment
 from taggit.models import Tag
 
@@ -16,7 +17,7 @@ def post_list(request, tag_slug=None):
         tag = get_object_or_404(Tag, slug=tag_slug)
         object_list = object_list.filter(tags__in=[tag])
 
-    paginator = Paginator(object_list, 3) # 3 posts in each page
+    paginator = Paginator(object_list, 3)  # 3 posts in each page
     page = request.GET.get('page')
     try:
         posts = paginator.page(page)
@@ -36,7 +37,6 @@ class PostListView(ListView):
     context_object_name = 'posts'
     paginate_by = 3
     template_name = 'blog/post/list.html'
-
 
 
 def post_detail(request, year, month, day, post):
@@ -63,8 +63,6 @@ def post_detail(request, year, month, day, post):
                                                      'similar_posts': similar_posts})
 
 
-
-
 def post_share(request, post_id):
     post = get_object_or_404(Post, id=post_id, status='published')
     sent = False
@@ -80,4 +78,20 @@ def post_share(request, post_id):
     else:
         form = EmilPostForm()
         return render(request, 'blog/post/share.html',
-                        {'post': post, 'form': form, 'sent': sent})
+                      {'post': post, 'form': form, 'sent': sent})
+
+
+def post_search(request):
+    form = SearchForm()
+    query = None
+    results = []
+    if 'query' in request.GET:
+        form = SearchForm(request.GET)
+    if form.is_valid():
+        query = form.cleaned_data['query']
+        results = Post.objects.annotate(
+            similarity=TrigramSimilarity('title', query),
+        ).filter(similarity__gt=0.3).order_by('-similarity')
+        return render(request, 'blog/post/search.html', {'form': form,
+                                                     'query': query,
+                                                     'results': results})
